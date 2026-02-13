@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ai-sdk/mcp": "^1.0.21",
     "@openrouter/ai-sdk-provider": "^2.2.3",
     "@upstash/redis": "^1.36.2",
     "ai": "^6.0.82",

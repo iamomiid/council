@@ -4,24 +4,28 @@ This project is a simple council of AI agents. Each agent has a specific role an
 
 This project uses Nextjs app router and server actions for the core functionality.
 
-Agents have only one active session at a time (called "default").
+Vercel AI and Upstash llms.txt files are present in the repo to help coding agents.
 
 ## File Structure
 
-Each agent has access to a list of markdown files that serve as the knowledge base for the agent.
+Each agent has access to its system prompt and a list of memories that serve as the knowledge base for the agent.
 
 ## Agent
 
 Each agent has a name and a system prompt that serves as a guide for agent's characteristics and behavior.
 
-We only keep conversation history for the default session.
+Agents have only one active session at a time (called "default").
+
+Conversation history is stored for each session.
 
 User can start a new session that will override the default session and start a new conversation.
 
 ## Database
 
-This project is built on top of Upstash stack. It uses Redis as a database, QStash as messaging and scheduling system and Vector for semantic search through memories.
+This project is built on top of Upstash stack. 
+
+It uses Redis as a database, QStash as messaging and scheduling system and Vector for semantic search through memories.
 
 ## Tools
 
--
+- agent_update_system_prompt: Agent can decide to update its system prompt. It will help the agent to adapt to new information and changes in the environment.

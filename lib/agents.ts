@@ -19,6 +19,15 @@ export type Agent = {
   name: string;
 };
 
+export type AgentMcpServer = {
+  id: string;
+  name: string;
+  transport: "http" | "sse";
+  url: string;
+  headers: Record<string, string>;
+  enabled: boolean;
+};
+
 export type AgentSession = {
   id: string;
 };
@@ -77,6 +86,7 @@ export async function createAgent(input: { id: string; name: string }): Promise<
     id,
     name,
     systemPrompt: bootstrapPrompt,
+    mcpServers: "[]",
     createdAt,
     updatedAt: createdAt,
   });
@@ -247,14 +257,92 @@ export async function updateAgentSystemPrompt(input: {
   });
 }
 
+export async function listAgentMcpServers(agentId: string): Promise<AgentMcpServer[]> {
+  const agent = await assertAgentExists(agentId);
+  return parseStoredMcpServers(agent.mcpServers);
+}
+
+export async function addAgentMcpServer(input: {
+  agentId: string;
+  server: AgentMcpServer;
+}): Promise<AgentMcpServer[]> {
+  const agent = await assertAgentExists(input.agentId);
+  const servers = parseStoredMcpServers(agent.mcpServers);
+  const next = normalizeMcpServer(input.server);
+
+  if (servers.some((server) => server.id === next.id)) {
+    throw new Error(`MCP server id already exists: ${next.id}`);
+  }
+
+  const updated = [...servers, next].sort((a, b) => a.name.localeCompare(b.name));
+  await saveAgentMcpServers(input.agentId, updated);
+  return updated;
+}
+
+export async function updateAgentMcpServer(input: {
+  agentId: string;
+  serverId: string;
+  server: AgentMcpServer;
+}): Promise<AgentMcpServer[]> {
+  const agent = await assertAgentExists(input.agentId);
+  const servers = parseStoredMcpServers(agent.mcpServers);
+  const targetId = input.serverId.trim();
+
+  if (!targetId) {
+    throw new Error("MCP server id is required");
+  }
+
+  const index = servers.findIndex((server) => server.id === targetId);
+  if (index < 0) {
+    throw new Error(`MCP server not found: ${targetId}`);
+  }
+
+  const next = normalizeMcpServer(input.server);
+  const hasCollision = servers.some((server) => server.id === next.id && server.id !== targetId);
+  if (hasCollision) {
+    throw new Error(`MCP server id already exists: ${next.id}`);
+  }
+
+  const updated = [...servers];
+  updated[index] = next;
+  updated.sort((a, b) => a.name.localeCompare(b.name));
+  await saveAgentMcpServers(input.agentId, updated);
+  return updated;
+}
+
+export async function deleteAgentMcpServer(input: {
+  agentId: string;
+  serverId: string;
+}): Promise<AgentMcpServer[]> {
+  const agent = await assertAgentExists(input.agentId);
+  const servers = parseStoredMcpServers(agent.mcpServers);
+  const targetId = input.serverId.trim();
+
+  if (!targetId) {
+    throw new Error("MCP server id is required");
+  }
+
+  const updated = servers.filter((server) => server.id !== targetId);
+  if (updated.length === servers.length) {
+    throw new Error(`MCP server not found: ${targetId}`);
+  }
+
+  await saveAgentMcpServers(input.agentId, updated);
+  return updated;
+}
+
 async function assertAgentExists(agentId: string): Promise<{
   id: string;
   name: string;
   systemPrompt?: string;
+  mcpServers?: unknown;
 }> {
-  const agent = await redis.hgetall<{ id?: string; name?: string; systemPrompt?: string }>(
-    agentKey(agentId),
-  );
+  const agent = await redis.hgetall<{
+    id?: string;
+    name?: string;
+    systemPrompt?: string;
+    mcpServers?: unknown;
+  }>(agentKey(agentId));
   if (!agent?.id || !agent.name) {
     throw new Error(`Agent not found: ${agentId}`);
   }
@@ -262,6 +350,7 @@ async function assertAgentExists(agentId: string): Promise<{
     id: agent.id,
     name: agent.name,
     systemPrompt: agent.systemPrompt,
+    mcpServers: agent.mcpServers,
   };
 }
 
@@ -337,4 +426,131 @@ function asNumber(value: string | number | undefined): number {
   }
 
   return 0;
+}
+
+function parseStoredMcpServers(value: unknown): AgentMcpServer[] {
+  if (!value) {
+    return [];
+  }
+
+  const parsed = normalizeStoredMcpPayload(value);
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  const servers: AgentMcpServer[] = [];
+  for (const item of parsed) {
+    try {
+      servers.push(normalizeMcpServer(item));
+    } catch {
+      // Skip malformed entries to keep existing agents usable.
+    }
+  }
+  return servers;
+}
+
+function normalizeStoredMcpPayload(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return normalizeStoredMcpPayload(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  if (value && typeof value === "object") {
+    const entries = Object.values(value);
+    if (entries.every((entry) => entry && typeof entry === "object")) {
+      return entries;
+    }
+  }
+
+  return null;
+}
+
+function normalizeMcpServer(input: unknown): AgentMcpServer {
+  if (!input || typeof input !== "object") {
+    throw new Error("MCP server payload must be an object");
+  }
+
+  const value = input as {
+    id?: unknown;
+    name?: unknown;
+    transport?: unknown;
+    url?: unknown;
+    headers?: unknown;
+    enabled?: unknown;
+  };
+
+  const id = asNonEmptyString(value.id, "MCP server id is required");
+  const name = asNonEmptyString(value.name, "MCP server name is required");
+  const transport = normalizeTransport(value.transport);
+  const url = asOptionalTrimmedString(value.url);
+  const headers = normalizeHeaders(value.headers);
+  const enabled = typeof value.enabled === "boolean" ? value.enabled : true;
+
+  if (!url) {
+    throw new Error("MCP servers require a URL");
+  }
+
+  return {
+    id,
+    name,
+    transport,
+    url,
+    headers,
+    enabled,
+  };
+}
+
+function normalizeTransport(value: unknown): "http" | "sse" {
+  if (value === "sse") {
+    return "sse";
+  }
+  if (value === undefined || value === "http" || value === "streamable-http") {
+    return "http";
+  }
+  throw new Error("Invalid MCP transport. Supported transports: http, sse.");
+}
+
+function normalizeHeaders(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const headers: Record<string, string> = {};
+  for (const [key, headerValue] of Object.entries(value)) {
+    if (typeof headerValue === "string" && key.trim()) {
+      headers[key.trim()] = headerValue;
+    }
+  }
+  return headers;
+}
+
+function asNonEmptyString(value: unknown, errorMessage: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(errorMessage);
+  }
+  return value.trim();
+}
+
+function asOptionalTrimmedString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+async function saveAgentMcpServers(agentId: string, servers: AgentMcpServer[]): Promise<void> {
+  await redis.hset(agentKey(agentId), {
+    mcpServers: JSON.stringify(servers),
+    updatedAt: new Date().toISOString(),
+  });
 }
