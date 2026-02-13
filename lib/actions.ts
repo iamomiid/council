@@ -19,6 +19,7 @@ import {
   type AgentSession,
   type SessionTokenUsage,
 } from "@/lib/agents";
+import { resetAgentMemory } from "@/lib/memory";
 
 export async function listAgentsAction(): Promise<Agent[]> {
   return listAgents();
@@ -44,7 +45,8 @@ export async function listAgentSessionsAction(input: {
 export async function startFreshDefaultSessionAction(input: {
   agentId: string;
 }): Promise<void> {
-  return clearSessionMessages(input.agentId, DEFAULT_SESSION_ID);
+  await clearSessionMessages(input.agentId, DEFAULT_SESSION_ID);
+  await resetAgentMemory(input.agentId);
 }
 
 export async function getSessionTokenUsageAction(input: {

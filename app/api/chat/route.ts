@@ -8,17 +8,18 @@ import {
 	type ToolSet,
 } from "ai";
 import {
-  addSessionTokenUsage,
-  type AgentMcpServer,
-  appendSessionMessage,
-  appendSessionMessages,
-  DEFAULT_SESSION_ID,
-  getAgentSystemPrompt,
-  listAgentSessions,
-  getSessionMessages,
-  listAgentMcpServers,
-  updateAgentSystemPrompt,
+	addSessionTokenUsage,
+	type AgentMcpServer,
+	appendSessionMessage,
+	appendSessionMessages,
+	DEFAULT_SESSION_ID,
+	getAgentSystemPrompt,
+	listAgentSessions,
+	getSessionMessages,
+	listAgentMcpServers,
+	updateAgentSystemPrompt,
 } from "@/lib/agents";
+import { appendAgentMemory, searchAgentMemory } from "@/lib/memory";
 
 type ChatRequestBody = {
 	agentId?: string;
@@ -74,22 +75,22 @@ export async function POST(request: Request) {
 	const enabledMcpServers = (await listAgentMcpServers(agentId)).filter(
 		(server) => server.enabled,
 	);
-  const mcpClients: MCPClient[] = [];
-  const tools: ToolSet = {
-    sessions_list: tool({
-      description: "List this agent's sessions. Returns session names only.",
-      inputSchema: jsonSchema({
-        type: "object",
-        properties: {},
-        additionalProperties: false,
-      }),
-      execute: async () => {
-        const sessions = await listAgentSessions(agentId);
-        return {
-          sessions: sessions.map((session) => session.id),
-        };
-      },
-    }),
+	const mcpClients: MCPClient[] = [];
+	const tools: ToolSet = {
+		sessions_list: tool({
+			description: "List this agent's sessions. Returns session names only.",
+			inputSchema: jsonSchema({
+				type: "object",
+				properties: {},
+				additionalProperties: false,
+			}),
+			execute: async () => {
+				const sessions = await listAgentSessions(agentId);
+				return {
+					sessions: sessions.map((session) => session.id),
+				};
+			},
+		}),
 		update_system_prompt: tool({
 			description:
 				"Update this agent's system prompt. Use when asked to change behavior, tone, or operating rules.",
@@ -113,6 +114,58 @@ export async function POST(request: Request) {
 				return {
 					ok: true,
 					message: "System prompt updated successfully.",
+				};
+			},
+		}),
+		memory_add: tool({
+			description: "Append memory into knowledge base for today.",
+			inputSchema: jsonSchema({
+				type: "object",
+				properties: {
+					memory: {
+						type: "string",
+						description: "Memory text to append.",
+					},
+				},
+				required: ["memory"],
+				additionalProperties: false,
+			}),
+			execute: async ({ memory }) => {
+				const result = await appendAgentMemory({
+					agentId,
+					content: memory,
+				});
+
+				return {
+					ok: true,
+					index: result.index,
+					id: result.id,
+					entries: result.entries,
+				};
+			},
+		}),
+		memory_search: tool({
+			description:
+				"Search the agent's memory index and return top 3 related memory documents.",
+			inputSchema: jsonSchema({
+				type: "object",
+				properties: {
+					query: {
+						type: "string",
+						description: "Search query for related memory.",
+					},
+				},
+				required: ["query"],
+				additionalProperties: false,
+			}),
+			execute: async ({ query }) => {
+				const results = await searchAgentMemory({
+					agentId,
+					query,
+				});
+
+				return {
+					results,
 				};
 			},
 		}),
@@ -143,8 +196,6 @@ export async function POST(request: Request) {
 			{ status: 500 },
 		);
 	}
-
-	console.log("tools", tools);
 
 	const agent = new ToolLoopAgent({
 		model: openrouter(model),
