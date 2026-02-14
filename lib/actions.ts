@@ -13,13 +13,14 @@ import {
   listAgentMcpServers,
   listAgentSessions,
   listAgents,
+  resetAgentSystemPrompt,
   updateAgentMcpServer,
   type Agent,
   type AgentMcpServer,
   type AgentSession,
   type SessionTokenUsage,
 } from "@/lib/agents";
-import { resetAgentMemory } from "@/lib/memory";
+import { listAgentMemories, resetAgentMemory, type AgentMemoryDocument } from "@/lib/memory";
 
 export async function listAgentsAction(): Promise<Agent[]> {
   return listAgents();
@@ -47,6 +48,7 @@ export async function startFreshDefaultSessionAction(input: {
 }): Promise<void> {
   await clearSessionMessages(input.agentId, DEFAULT_SESSION_ID);
   await resetAgentMemory(input.agentId);
+  await resetAgentSystemPrompt(input.agentId);
 }
 
 export async function getSessionTokenUsageAction(input: {
@@ -66,6 +68,12 @@ export async function listAgentMcpServersAction(input: {
   agentId: string;
 }): Promise<AgentMcpServer[]> {
   return listAgentMcpServers(input.agentId);
+}
+
+export async function listAgentMemoriesAction(input: {
+  agentId: string;
+}): Promise<AgentMemoryDocument[]> {
+  return listAgentMemories(input.agentId);
 }
 
 export async function addAgentMcpServerAction(input: {

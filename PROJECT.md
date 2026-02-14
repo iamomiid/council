@@ -22,10 +22,14 @@ User can start a new session that will override the default session and start a 
 
 ## Database
 
-This project is built on top of Upstash stack. 
+This project is built on top of Upstash stack.
 
 It uses Redis as a database, QStash as messaging and scheduling system and Vector for semantic search through memories.
 
 ## Tools
 
-- agent_update_system_prompt: Agent can decide to update its system prompt. It will help the agent to adapt to new information and changes in the environment.
+- update_system_prompt: Agent can decide to update its system prompt. It will help the agent to adapt to new information and changes in the environment.
+- memory_add: Agent can add a new memory to its knowledge base. It will help the agent to remember new information and changes in the environment.
+- memory_search: Agent can search its knowledge base for relevant information. It will help the agent to answer questions and provide information.
+- web_search: Agent can search the web for relevant information. It will help the agent to answer questions and provide information.
+- sessions_list: Agent can list all its sessions. It will help the user to see all the conversations with the agent.

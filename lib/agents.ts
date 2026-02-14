@@ -257,6 +257,15 @@ export async function updateAgentSystemPrompt(input: {
   });
 }
 
+export async function resetAgentSystemPrompt(agentId: string): Promise<void> {
+  await assertAgentExists(agentId);
+  const bootstrapPrompt = await getBootstrapSystemPrompt();
+  await redis.hset(agentKey(agentId), {
+    systemPrompt: bootstrapPrompt,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 export async function listAgentMcpServers(agentId: string): Promise<AgentMcpServer[]> {
   const agent = await assertAgentExists(agentId);
   return parseStoredMcpServers(agent.mcpServers);

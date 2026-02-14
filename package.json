@@ -14,6 +14,7 @@
     "@upstash/redis": "^1.36.2",
     "@upstash/search": "^0.1.7",
     "ai": "^6.0.82",
+    "brave-search": "^0.9.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.563.0",

@@ -20,6 +20,7 @@ import {
 	updateAgentSystemPrompt,
 } from "@/lib/agents";
 import { appendAgentMemory, searchAgentMemory } from "@/lib/memory";
+import { searchBraveWeb } from "@/lib/brave-search";
 
 type ChatRequestBody = {
 	agentId?: string;
@@ -29,10 +30,6 @@ type ChatRequestBody = {
 
 const openrouter = createOpenRouter({
 	apiKey: process.env.OPENROUTER_API_KEY,
-	headers: {
-		"HTTP-Referer": process.env.OPENROUTER_SITE_URL ?? "http://localhost:3000",
-		"X-Title": process.env.OPENROUTER_APP_NAME ?? "Council",
-	},
 });
 
 export async function POST(request: Request) {
@@ -166,6 +163,27 @@ export async function POST(request: Request) {
 
 				return {
 					results,
+				};
+			},
+		}),
+		web_search: tool({
+			description:
+				"Search the web using Brave Search and return the top 3 relevant pages.",
+			inputSchema: jsonSchema({
+				type: "object",
+				properties: {
+					query: {
+						type: "string",
+						description: "Web search query.",
+					},
+				},
+				required: ["query"],
+				additionalProperties: false,
+			}),
+			execute: async ({ query }) => {
+				const pages = await searchBraveWeb(query);
+				return {
+					pages,
 				};
 			},
 		}),

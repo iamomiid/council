@@ -13,6 +13,12 @@ type MemoryMetadata = {
 	day: string;
 };
 
+export type AgentMemoryDocument = {
+	id: string;
+	content: MemoryContent;
+	metadata?: MemoryMetadata;
+};
+
 function getAgentMemoryIndex(agentId: string) {
 	return Search.fromEnv().index<MemoryContent, MemoryMetadata>(agentId);
 }
@@ -97,4 +103,40 @@ export async function searchAgentMemory(input: {
 		content: item.content,
 		metadata: item.metadata,
 	}));
+}
+
+export async function listAgentMemories(
+	agentId: string,
+): Promise<AgentMemoryDocument[]> {
+	const index = getAgentMemoryIndex(agentId);
+	let cursor = "0";
+	const memories: AgentMemoryDocument[] = [];
+	const seenCursors = new Set<string>();
+
+	for (let i = 0; i < 20; i++) {
+		if (seenCursors.has(cursor)) {
+			break;
+		}
+		seenCursors.add(cursor);
+
+		const page = await index.range({
+			cursor,
+			limit: 100,
+		});
+
+		memories.push(
+			...page.documents.map((document) => ({
+				id: document.id,
+				content: document.content,
+				metadata: document.metadata,
+			})),
+		);
+
+		if (!page.nextCursor) {
+			break;
+		}
+		cursor = page.nextCursor;
+	}
+
+	return memories.sort((a, b) => b.id.localeCompare(a.id));
 }

@@ -7,6 +7,7 @@ import {
   getAgentSystemPromptAction,
   getSessionMessagesAction,
   getSessionTokenUsageAction,
+  listAgentMemoriesAction,
   listAgentMcpServersAction,
   listAgentSessionsAction,
   listAgentsAction,
@@ -56,6 +57,21 @@ type McpServerDraft = {
 
 type SidebarTab = "agents" | "sessions" | "mcp";
 
+type AgentMemoryDocument = {
+  id: string;
+  content: {
+    text: string;
+    day: string;
+    createdAt: string;
+    updatedAt: string;
+    entries: number;
+  };
+  metadata?: {
+    agentId: string;
+    day: string;
+  };
+};
+
 const DEFAULT_SESSION_ID = "default";
 const EMPTY_USAGE: SessionTokenUsage = {
   inputTokens: 0,
@@ -89,6 +105,11 @@ export function ConversationUi() {
   const [agentSystemPrompt, setAgentSystemPrompt] = useState("");
   const [isLoadingSystemPrompt, setIsLoadingSystemPrompt] = useState(false);
   const [systemPromptError, setSystemPromptError] = useState<string | null>(null);
+  const [memories, setMemories] = useState<AgentMemoryDocument[]>([]);
+  const [isLoadingMemories, setIsLoadingMemories] = useState(false);
+  const [memoriesError, setMemoriesError] = useState<string | null>(null);
+  const [isSystemPromptExpanded, setIsSystemPromptExpanded] = useState(false);
+  const [expandedMemories, setExpandedMemories] = useState<Record<string, boolean>>({});
   const [isPending, startTransition] = useTransition();
   const [isSavingAgent, startSaveAgentTransition] = useTransition();
   const [isSavingMcp, startSaveMcpTransition] = useTransition();
@@ -225,6 +246,35 @@ export function ConversationUi() {
     void loadSystemPrompt();
   }, [selectedAgentId]);
 
+  useEffect(() => {
+    setIsSystemPromptExpanded(false);
+    setExpandedMemories({});
+  }, [selectedAgentId]);
+
+  useEffect(() => {
+    if (!selectedAgentId) {
+      setMemories([]);
+      setMemoriesError(null);
+      return;
+    }
+
+    const loadMemories = async () => {
+      try {
+        setIsLoadingMemories(true);
+        const nextMemories = await listAgentMemoriesAction({ agentId: selectedAgentId });
+        setMemories(nextMemories);
+        setMemoriesError(null);
+      } catch {
+        setMemories([]);
+        setMemoriesError("Failed to load memories.");
+      } finally {
+        setIsLoadingMemories(false);
+      }
+    };
+
+    void loadMemories();
+  }, [selectedAgentId]);
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = input.trim();
@@ -356,6 +406,10 @@ export function ConversationUi() {
       });
       setMessages(refreshedMessages);
       setSessionUsage(EMPTY_USAGE);
+      const prompt = await getAgentSystemPromptAction({ agentId: selectedAgentId });
+      setAgentSystemPrompt(prompt);
+      const nextMemories = await listAgentMemoriesAction({ agentId: selectedAgentId });
+      setMemories(nextMemories);
     });
   };
 
@@ -463,6 +517,26 @@ export function ConversationUi() {
         setSystemPromptError("Failed to load system prompt.");
       } finally {
         setIsLoadingSystemPrompt(false);
+      }
+    });
+  };
+
+  const handleRefreshMemories = () => {
+    if (!selectedAgentId) {
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        setIsLoadingMemories(true);
+        const nextMemories = await listAgentMemoriesAction({ agentId: selectedAgentId });
+        setMemories(nextMemories);
+        setMemoriesError(null);
+      } catch {
+        setMemories([]);
+        setMemoriesError("Failed to load memories.");
+      } finally {
+        setIsLoadingMemories(false);
       }
     });
   };
@@ -626,24 +700,98 @@ export function ConversationUi() {
                   <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                     Current System Prompt
                   </p>
-                  <button
-                    type="button"
-                    onClick={handleRefreshSystemPrompt}
-                    disabled={!selectedAgentId || isLoadingSystemPrompt}
-                    className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isLoadingSystemPrompt ? "Loading..." : "Refresh"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsSystemPromptExpanded((current) => !current)}
+                      className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                    >
+                      {isSystemPromptExpanded ? "Collapse" : "Expand"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRefreshSystemPrompt}
+                      disabled={!selectedAgentId || isLoadingSystemPrompt}
+                      className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isLoadingSystemPrompt ? "Loading..." : "Refresh"}
+                    </button>
+                  </div>
                 </div>
                 {systemPromptError ? (
                   <p className="text-xs text-rose-600">{systemPromptError}</p>
                 ) : null}
-                <textarea
-                  readOnly
-                  value={agentSystemPrompt}
-                  placeholder={selectedAgentId ? "No prompt found." : "Select an agent to view prompt."}
-                  className="min-h-28 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none"
-                />
+                <div
+                  className={`rounded-lg border border-slate-300 bg-white px-3 py-2 ${
+                    isSystemPromptExpanded ? "" : "max-h-40 overflow-hidden"
+                  }`}
+                >
+                  {agentSystemPrompt ? (
+                    <MarkdownText text={agentSystemPrompt} />
+                  ) : (
+                    <p className="text-xs text-slate-500">
+                      {selectedAgentId ? "No prompt found." : "Select an agent to view prompt."}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Memories
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleRefreshMemories}
+                    disabled={!selectedAgentId || isLoadingMemories}
+                    className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isLoadingMemories ? "Loading..." : "Refresh"}
+                  </button>
+                </div>
+                {memoriesError ? <p className="text-xs text-rose-600">{memoriesError}</p> : null}
+                {!isLoadingMemories && memories.length === 0 ? (
+                  <p className="text-xs text-slate-500">No memories yet.</p>
+                ) : null}
+                <div className="space-y-2">
+                  {memories.map((memory) => {
+                    const isExpanded = expandedMemories[memory.id] ?? false;
+                    return (
+                      <article key={memory.id} className="rounded-lg border border-slate-300 bg-white p-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-xs font-medium text-slate-700">
+                              {memory.id} · entries: {memory.content.entries}
+                            </p>
+                            <p className="text-xs text-slate-500">{memory.content.updatedAt}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedMemories((current) => ({
+                                ...current,
+                                [memory.id]: !isExpanded,
+                              }))
+                            }
+                            className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                          >
+                            {isExpanded ? "Hide" : "Show"}
+                          </button>
+                        </div>
+                        {isExpanded ? (
+                          <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1">
+                            <MarkdownText text={memory.content.text} />
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-xs text-slate-600">
+                            {getMemoryPreview(memory.content.text)}
+                          </p>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
               </div>
 
               {isAddingAgent ? (
@@ -982,6 +1130,14 @@ function MarkdownText({ text }: { text: string }) {
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
     </div>
   );
+}
+
+function getMemoryPreview(text: string): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 180) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 177)}...`;
 }
 
 function emptyMcpDraft(): McpServerDraft {
